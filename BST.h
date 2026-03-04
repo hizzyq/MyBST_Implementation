@@ -2,6 +2,9 @@
 #define BST_H
 
 #include <functional>
+#include <iostream>
+#include <stack>
+#include <queue>
 
 template <typename Key, typename Compare = std::less<Key>>
 class BST
@@ -50,8 +53,8 @@ public:
 
         bool operator==(const iterator& other) const {return node == other.node;}
         bool operator!=(const iterator& other) const {return !(*this == other);}
-        pointer   operator->() {return &static_cast<Node*>(node)->data;}
-        reference operator*() {return static_cast<Node*>(node)->data;}
+        const_pointer   operator->() const {return &static_cast<Node*>(node)->data;}
+        const_reference operator*() const {return static_cast<Node*>(node)->data;}
         iterator& operator--()
         {
             node = decrement(node);
@@ -141,7 +144,8 @@ private:
         return y;
     }
 
-    std::pair<iterator, bool> M_insert(key_type&& value)
+    template <typename Arg>
+    std::pair<iterator, bool> M_insert(Arg&& value)
     {
         NodeBase* parent_node = &header;
         NodeBase* current = header.parent;
@@ -159,7 +163,7 @@ private:
                 return std::make_pair(iterator(current), false);
         }
 
-        Node* ins = new Node(std::forward<key_type>(value));
+        Node* ins = new Node(std::forward<Arg>(value));
         auto ins_base = static_cast<NodeBase*>(ins);
         ins_base->parent = parent_node;
 
@@ -186,8 +190,103 @@ private:
         return std::make_pair(iterator(ins_base), true);
     }
 
+    void M_transplant(NodeBase* u, NodeBase* v)
+    {
+        if (u->parent == &header)
+            header.parent = v;
+        else if (u == u->parent->left)
+            u->parent->left = v;
+        else
+            u->parent->right = v;
+        if (v != nullptr)
+            v->parent = u->parent;
+    }
+
+    void M_erase_at_node(NodeBase* x)
+    {
+        if (x != nullptr)
+        {
+            M_erase_at_node(x->left);
+            M_erase_at_node(x->right);
+            delete static_cast<Node*>(x);
+        }
+    }
+
+    void M_print_inorder(NodeBase* x) const
+    {
+        if (x != nullptr)
+        {
+            M_print_inorder(x->left);
+            std::cout << static_cast<Node*>(x)->data << " ";
+            M_print_inorder(x->right);
+        }
+    }
+
+    bool M_is_equal(NodeBase* x, NodeBase* y) const
+    {
+        if (!x && !y)
+            return true;
+        if (!x || !y)
+            return false;
+        if (static_cast<Node*>(x)->data != static_cast<Node*>(y)->data)
+            return false;
+        return M_is_equal(x->left, y->left) && M_is_equal(x->right, y->right);
+    }
 public:
     BST() { init_empty(); }
+
+    BST(const BST& other) : comp(other.comp)
+    {
+        init_empty();
+        for (const auto& value : other)
+            insert(value);
+    }
+
+    BST& operator=(const BST& other)
+    {
+        if (this != &other)
+        {
+            clear();
+            comp = other.comp;
+            for (const auto& value : other)
+                insert(value);
+        }
+        return *this;
+    }
+
+    BST(BST&& other) noexcept : comp(std::move(other.comp))
+    {
+        if (other.empty())
+            init_empty();
+        else
+        {
+            header.parent = other.header.parent;
+            header.left = other.header.left;
+            header.right = other.header.right;
+            header.parent->parent = &header;
+            _size = other._size;
+            other.init_empty();
+        }
+    }
+
+    BST& operator=(BST&& other) noexcept
+    {
+        if (this != &other)
+        {
+            clear();
+            comp = std::move(other.comp);
+            if (!other.empty())
+            {
+                header.parent = other.header.parent;
+                header.left = other.header.left;
+                header.right = other.header.right;
+                header.parent->parent = &header;
+                _size = other._size;
+                other.init_empty();
+            }
+        }
+        return *this;
+    }
 
     iterator begin() { return iterator(header.left); }
     iterator end() { return iterator(&header); }
@@ -268,6 +367,145 @@ public:
                 current = current->right;
         }
         return iterator(result);
+    }
+
+    iterator get_next(iterator it)
+    {
+        return iterator(increment(it.node));
+    }
+
+    iterator get_prev(iterator it)
+    {
+        return iterator(decrement(it.node));
+    }
+
+    iterator erase(iterator position)
+    {
+        NodeBase* to_del = position.node;
+        if (to_del == &header)
+            return end();
+
+        iterator result = position;
+        ++result;
+
+        if (to_del == header.left)
+            header.left = to_del->right != nullptr ? minimum(to_del->right) : to_del->parent;
+        if (to_del == header.right)
+            header.right = to_del->left != nullptr ? maximum(to_del->left) : to_del->parent;
+
+        if (to_del->left == nullptr)
+            M_transplant(to_del, to_del->right);
+        else if (to_del->right == nullptr)
+            M_transplant(to_del, to_del->left);
+        else
+        {
+            NodeBase* y = minimum(to_del->right);
+            if (y->parent != to_del)
+            {
+                M_transplant(y, y->right);
+                y->right = to_del->right;
+                y->right->parent = y;
+            }
+            M_transplant(to_del, y);
+            y->left = to_del->left;
+            y->left->parent = y;
+        }
+
+        delete static_cast<Node*>(to_del);
+        _size--;
+        return result;
+    }
+
+    bool operator==(const BST& other) const
+    {
+        if (_size != other.size())
+            return false;
+        return M_is_equal(header.parent, other.header.parent);
+    }
+
+    void print_recursive() const
+    {
+        M_print_inorder(header.parent);
+        std::cout << std::endl;
+    }
+
+    void print_stack() const
+    {
+        if (empty()) return;
+        std::stack<NodeBase*> s;
+        s.push(header.parent);
+        while (!s.empty())
+        {
+            NodeBase* curr = s.top();
+            s.pop();
+            std::cout << static_cast<Node*>(curr)->data << " ";
+            if (curr->right)
+                s.push(curr->right);
+            if (curr->left)
+                s.push(curr->left);
+        }
+        std::cout << std::endl;
+    }
+
+    void print_reverse_stack() const
+    {
+        if (empty())
+            return;
+        std::stack<NodeBase*> s;
+        s.push(header.parent);
+        while (!s.empty())
+            {
+            NodeBase* curr = s.top();
+            s.pop();
+            std::cout << static_cast<Node*>(curr)->data << " ";
+            if (curr->left)
+                s.push(curr->left);
+            if (curr->right)
+                s.push(curr->right);
+        }
+        std::cout << std::endl;
+    }
+
+    void print_level_order() const
+    {
+        if (empty())
+            return;
+        std::queue<NodeBase*> q;
+        q.push(header.parent);
+
+        while (!q.empty())
+        {
+            NodeBase* curr = q.front();
+            q.pop();
+
+            std::cout << static_cast<Node*>(curr)->data << " ";
+
+            if (curr->left)
+                q.push(curr->left);
+            if (curr->right)
+                q.push(curr->right);
+        }
+        std::cout << std::endl;
+    }
+
+    size_type erase(const key_type& value)
+    {
+        iterator it = find(value);
+        if (it == end())
+            return 0;
+        erase(it);
+        return 1;
+    }
+
+    void clear()
+    {
+        M_erase_at_node(header.parent);
+        init_empty();
+    }
+
+    ~BST()
+    {
+        clear();
     }
 };
 
