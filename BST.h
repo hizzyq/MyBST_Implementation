@@ -37,7 +37,7 @@ public:
     {
         friend class BST;
         NodeBase* node;
-        iterator(NodeBase* n) : node(n) {}
+        explicit iterator(NodeBase* n) : node(n) {}
 
     public:
         using iterator_category = std::bidirectional_iterator_tag;
@@ -141,6 +141,51 @@ private:
         return y;
     }
 
+    std::pair<iterator, bool> M_insert(key_type&& value)
+    {
+        NodeBase* parent_node = &header;
+        NodeBase* current = header.parent;
+        bool is_less = true;
+
+        while (current != nullptr)
+        {
+            parent_node = current;
+            is_less = comp(value, static_cast<Node*>(current)->data);
+            if (is_less)
+                current = current->left;
+            else if (comp(static_cast<Node*>(current)->data, value))
+                current = current->right;
+            else
+                return std::make_pair(iterator(current), false);
+        }
+
+        Node* ins = new Node(std::forward<key_type>(value));
+        auto ins_base = static_cast<NodeBase*>(ins);
+        ins_base->parent = parent_node;
+
+        if (parent_node == &header)
+        {
+            header.parent = ins_base;
+            header.left = ins_base;
+            header.right = ins_base;
+        }
+        else if (is_less)
+        {
+            parent_node->left = ins_base;
+            if (parent_node == header.left)
+                header.left = ins_base;
+        }
+        else
+        {
+            parent_node->right = ins_base;
+            if (parent_node == header.right)
+                header.right = ins_base;
+        }
+
+        _size++;
+        return std::make_pair(iterator(ins_base), true);
+    }
+
 public:
     BST() { init_empty(); }
 
@@ -151,12 +196,78 @@ public:
 
     std::pair<iterator, bool> insert(const key_type& value)
     {
-
+        return M_insert(value);
     }
 
     std::pair<iterator, bool> insert(key_type&& value)
     {
+        return M_insert(std::move(value));
+    }
 
+    iterator find(const key_type& value)
+    {
+        NodeBase* current = header.parent;
+
+        while (current != nullptr)
+        {
+            if (comp(value, static_cast<Node*>(current)->data))
+                current = current->left;
+            else if (comp(static_cast<Node*>(current)->data, value))
+                current = current->right;
+            else
+                return iterator(current);
+        }
+        return end();
+    }
+
+    iterator min_element()
+    {
+        if (empty())
+            return end();
+        return iterator(header.left);
+    }
+
+    iterator max_element()
+    {
+        if (empty())
+            return end();
+        return iterator(header.right);
+    }
+
+    iterator lower_bound(const key_type& value)
+    {
+        NodeBase* current = header.parent;
+        NodeBase* result = &header;
+
+        while (current != nullptr)
+        {
+            if (!comp(static_cast<Node*>(current)->data, value))
+            {
+                result = current;
+                current = current->left;
+            }
+            else
+                current = current->right;
+        }
+        return iterator(result);
+    }
+
+    iterator upper_bound(const key_type& value)
+    {
+        NodeBase* current = header.parent;
+        NodeBase* result = &header;
+
+        while (current != nullptr)
+        {
+            if (comp(value, static_cast<Node*>(current)->data))
+            {
+                result = current;
+                current = current->left;
+            }
+            else
+                current = current->right;
+        }
+        return iterator(result);
     }
 };
 
